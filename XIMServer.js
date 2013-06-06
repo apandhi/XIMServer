@@ -1,4 +1,4 @@
-var xim_version = "0.70";
+var xim_version = "0.72";
 var WebSocketServer = require('websocket').server;
 var http = require('http');
 var minimum_build = 300;
@@ -24,12 +24,13 @@ var cached_messages_to = new Array();
 var cached_messages_messages = new Array();
 var cached_messages_count = 0;
 var server = http.createServer(function(request, response) {
-    response.writeHead(200, {'Content-Type': 'text/plain'});
+  	response.writeHead(200, {'Content-Type': 'text/plain'});
   	response.end('Looks like you can reach XIM servers.\nCongrats!');
     response.end();
 });
 
 console.log('[ SYS ] XIM Server ' + xim_version);
+
 read_settings();
 server.listen(8081, function() {
     console.log('[ SYS ] Server listening to connections now.');
@@ -669,6 +670,21 @@ function process(connection, data) {
 	
 	}
 	
+	if (data.substring(0,23) === "XIM_PHOTO_REQUEST_REST ") {
+	
+		// The other side wants more.
+		//console.log("user " + connection.xim_username + " wants more from " + data.substring(23));
+		
+		if (is_online(data.substring(23)) === false) {
+			send_to_user(connection.xim_username, "XIM_PHOTO_INTERRUPTED " + data.substring(23));
+			return;
+		}
+		
+		send_to_user(data.substring(23), "XIM_PHOTO_NEXT");
+		return;
+	
+	}
+	
 	if (data.substring(0,10) === "XIM_PHOTO ") {
 	
 		// Initiate photo transfer
@@ -682,16 +698,18 @@ function process(connection, data) {
 			var m_picture = m_data[1];
 		
 			if (is_online(m_to) === false) {
+				//console.log("OFFLINE.");
 				connection.sendUTF("XIM_PHOTO_STATUS " + m_to + "\n0");
 				return;
 			}
 			
 			connection.photo_data_to = m_to;
-			connection.photo_data = m_picture;
+			connection.photo_data_start = 0;
 			
-			console.log("first pack size = " + m_picture.length);
-			connection.sendUTF("XIM_PHOTO_NEXT");
-			//send_to_user(m_to, "XIM_PHOTO " + connection.xim_username + "\n" + m_picture);
+			//console.log("first pack size = " + m_picture.length);
+			
+			send_to_user(m_to, "XIM_PHOTO_FIRST " + connection.xim_username + "\n" + m_picture);
+			//setTimeout(function() { connection.sendUTF("XIM_PHOTO_NEXT"); }, 500);
 			//connection.sendUTF("XIM_PHOTO_STATUS " + m_to + "\n1");
 			
 		} catch(e) {
@@ -712,10 +730,16 @@ function process(connection, data) {
 		try {
 
 			var m_data = data.substring(12);
-			console.log("addt. pack size = " + m_data.length);
-			connection.photo_data = connection.photo_data + m_data;
-			connection.sendUTF("XIM_PHOTO_NEXT");
-			//send_to_user(m_to, "XIM_PHOTO " + connection.xim_username + "\n" + m_picture);
+			//console.log("addt. pack size = " + m_data.length);
+			//connection.photo_data = connection.photo_data + m_data;
+			//connection.sendUTF("XIM_PHOTO_NEXT");
+			
+			/*if (is_online(connection.photo_data_to) === false) {
+				send_to_user(connection.xim_username, "XIM_PHOTO_INTERRUPTED " + connection.photo_data_to);
+				return;
+			}*/
+			
+			send_to_user(connection.photo_data_to, "XIM_PHOTO " + connection.xim_username + "\n" + m_data);
 			//connection.sendUTF("XIM_PHOTO_STATUS " + m_to + "\n1");
 			
 		} catch(e) {
@@ -731,9 +755,14 @@ function process(connection, data) {
 	if (data === "XIM_PHOTO_COMPLETE") {
 	
 		// Photo transfer complete!
+		
+		if (is_online(connection.photo_data_to) === false) {
+			send_to_user(connection.xim_username, "XIM_PHOTO_INTERRUPTED " + connection.photo_data_to);
+			return;
+		}
 
 		console.log("COMPLETE! Size = " + connection.photo_data.length);
-		send_to_user(connection.photo_data_to, "XIM_PHOTO " + connection.xim_username + "\n" + connection.photo_data);
+		send_to_user(connection.photo_data_to, "XIM_PHOTO_LAST " + connection.xim_username + "\n" + connection.photo_data);
 		//connection.sendUTF("XIM_PHOTO_STATUS " + m_to + "\n1");
 
 		return;
