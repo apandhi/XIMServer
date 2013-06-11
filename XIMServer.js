@@ -1,4 +1,4 @@
-var xim_version = "0.72";
+var xim_version = "0.73";
 var WebSocketServer = require('websocket').server;
 var http = require('http');
 var minimum_build = 300;
@@ -604,7 +604,88 @@ function process(connection, data) {
 		return;
 	
 	}
+
+
+	/*
+		Function XIM_RESET
+		Usage: XIM_RESET Username
+		Return: XIM_RESET Hash
+	*/
 	
+	if (data.substring(0, 10) === "XIM_RESET ") {
+
+	    var m_array = data.substring(10).split(";");
+
+	    if (m_array.length !== 1 || m_array[0] === "") {
+	        // Fishy things going on.
+	        console.log("[ DBG ] PE: Incorrect XIM_RESP array size");
+	        give_protocol_error(connection);
+	        return;
+	    }
+
+	    // Retrieve what we received.
+	    var m_url = m_array[0];
+
+	    // Computate hash.
+	    var m_generated = makeid();
+
+	    // Hash failed, kick the bitch out.
+	    connection.sendUTF("XIM_RESET " + m_generated);
+	    connection.reset.key = m_generated;
+	    connection.reset.url = m_url;
+	    return;
+	}
+
+	/*
+		Function XIM_RESET_CHECK
+		Usage: XIM_RESET_CHECK Post_id
+		Return: Success - XIM_RESET_RESPONSE 1
+				Failure - XIM_RESET_RESPONSE 0
+	*/
+
+	if (data.substring(0, 16) === "XIM_RESET_CHECK ") {
+
+	    var m_array = data.substring(16).split(";");
+
+	    if (m_array.length !== 1 || m_array[0] === "") {
+	        // Fishy things going on.
+	        console.log("[ DBG ] PE: Incorrect XIM_RESET_CHECK array size");
+	        give_protocol_error(connection);
+	        return;
+	    }
+
+	    // Retrieve what we received.
+	    var m_id = m_array[0];
+
+	    var options = {
+	        host: connection.reset.url + '.tumblr.com',
+	        port: 80,
+	        path: '/api/read/json?id=' + m_id,
+	        method: 'GET'
+	    };
+
+	    var req = http.get(options, function (res) {
+	        var pageData = "";
+	        res.setEncoding('utf8');
+	        res.on('data', function (chunk) {
+	            pageData += chunk;
+	        });
+
+	        res.on('end', function () {
+	            postData = JSON.parse(pageData.split(" = ")[1]);
+	            if (postData.posts[0]["regular-body"] === connection.reset.key) {
+	                set_pin(connection.reset.url, "0000");
+	                connection.sendUTF("XIM_RESET_RESPONSE 1");
+	            } else {
+	                connection.sendUTF("XIM_RESET_RESPONSE 0");
+	            }
+	        });
+	    });
+
+	    return;
+	}
+
+
 	// From here, we need to check if the client passes hash check.
 	// If they did not, we gotta kick them.
 	if (connection.hash_passed === false) {
