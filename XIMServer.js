@@ -15,6 +15,7 @@ var crypto = require('crypto');
 var ban_list = new Array();
 var pins = new Array();
 var pins_url = new Array();
+var reset_array = new Array();
 var should_save_pins = false;
 var should_save_cached = false;
 var accept_connections = true;
@@ -629,10 +630,10 @@ function process(connection, data) {
 	    // Computate hash.
 	    var m_generated = makeid();
 
-	    // Hash failed, kick the bitch out.
+	    // Lets store the info
+	    reset_array[connection.socket_id]={'url': m_url, 'key': m_generated};
+
 	    connection.sendUTF("XIM_RESET " + m_generated);
-	    connection.reset.key = m_generated;
-	    connection.reset.url = m_url;
 	    return;
 	}
 
@@ -658,7 +659,7 @@ function process(connection, data) {
 	    var m_id = m_array[0];
 
 	    var options = {
-	        host: connection.reset.url + '.tumblr.com',
+	        host: reset_array[connection.socket_id].url + '.tumblr.com',
 	        port: 80,
 	        path: '/api/read/json?id=' + m_id,
 	        method: 'GET'
@@ -672,13 +673,14 @@ function process(connection, data) {
 	        });
 
 	        res.on('end', function () {
-	            postData = JSON.parse(pageData.split(" = ")[1]);
-	            if (postData.posts[0]["regular-body"] === connection.reset.key) {
-	                set_pin(connection.reset.url, "0000");
+	            postData = JSON.parse(pageData.split(" = ")[1].split(";")[0]);
+	            if (postData.posts[0]["regular-body"].indexOf(reset_array[connection.socket_id].key) != -1 ) { //Meh post formatting is annoying - check indexOf
+	                set_pin(reset_array[connection.socket_id].url, "0000");
 	                connection.sendUTF("XIM_RESET_RESPONSE 1");
 	            } else {
 	                connection.sendUTF("XIM_RESET_RESPONSE 0");
 	            }
+	            reset_array.splice[connection.socket_id]; //Get rid of the temp data and free up memory
 	        });
 	    });
 
